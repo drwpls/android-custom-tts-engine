@@ -1,9 +1,9 @@
 package com.example.CustomTts // Passe Paketnamen an
 
+import android.content.Intent
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-// Importiere notwendige Compose-Funktionen und dein Theme/SettingsScreen
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
@@ -11,13 +11,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource // <-- Wichtiger Import!
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-// Passe diese Imports an deine Projektstruktur an!
-import com.example.CustomTts.R // <-- Wichtiger Import!
-import com.example.CustomTts.ui.SettingsScreen // Oder wo auch immer SettingsScreen liegt
-import com.example.CustomTts.ui.theme.DummyTTSTheme // Dein Compose Theme
+import com.example.CustomTts.R
+import com.example.CustomTts.ui.SettingsScreen
+import com.example.CustomTts.ui.theme.DummyTTSTheme
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalMaterial3Api::class)
@@ -50,6 +50,7 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                     ) { paddingValues ->
+                        val context = LocalContext.current
                         Column(
                             modifier = Modifier
                                 .fillMaxSize()
@@ -58,11 +59,17 @@ class MainActivity : ComponentActivity() {
                             verticalArrangement = Arrangement.Center,
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(stringResource(id = R.string.main_screen_text_1)) // Geändert
+                            Text(stringResource(id = R.string.main_screen_text_1))
                             Spacer(modifier = Modifier.height(20.dp))
-                            Text(stringResource(id = R.string.main_screen_text_2)) // Geändert
+                            Text(stringResource(id = R.string.main_screen_text_2))
                             Spacer(modifier = Modifier.height(20.dp))
-                            Text(stringResource(id = R.string.main_screen_text_3)) // Geändert
+                            Text(stringResource(id = R.string.main_screen_text_3))
+                            Spacer(modifier = Modifier.height(32.dp))
+                            OutlinedButton(onClick = {
+                                context.startActivity(Intent("com.android.settings.TTS_SETTINGS"))
+                            }) {
+                                Text("Open Android TTS Settings")
+                            }
                         }
                     } // Ende Scaffold (Hauptinhalt)
                 } // Ende else (Hauptinhalt)

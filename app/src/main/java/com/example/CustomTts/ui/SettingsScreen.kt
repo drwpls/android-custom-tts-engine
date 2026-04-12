@@ -2,6 +2,7 @@ package com.example.CustomTts.ui // Passe diesen Paketnamen an!
 
 import android.util.Log
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -73,6 +74,12 @@ fun SettingsScreen(
     val models = listOf("tts-1", "tts-1-hd")
     val voices = listOf("alloy", "echo", "fable", "onyx", "nova", "shimmer")
 
+    data class Preset(val label: String, val url: String, val apiKey: String, val model: String, val voice: String, val format: String)
+    val presets = listOf(
+        Preset("AllTalk (Local)", "http://192.168.0.48:7851/v1/audio/speech", "", "piper", "alloy", "wav"),
+        Preset("OpenAI Cloud", "https://api.openai.com/v1/audio/speech", "", "tts-1", "alloy", "wav")
+    )
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
@@ -99,9 +106,26 @@ fun SettingsScreen(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    stringResource(id = R.string.settings_instruction), // Geändert
+                    stringResource(id = R.string.settings_instruction),
                     style = MaterialTheme.typography.bodyMedium
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Text("Presets", style = MaterialTheme.typography.labelMedium)
+                Spacer(modifier = Modifier.height(6.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    presets.forEach { preset ->
+                        OutlinedButton(onClick = {
+                            urlState = preset.url
+                            apiKeyState = preset.apiKey
+                            modelState = preset.model
+                            voiceState = preset.voice
+                            formatState = preset.format
+                        }) {
+                            Text(preset.label)
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(

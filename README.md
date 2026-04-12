@@ -1,49 +1,88 @@
 # Custom TTS Service for Android
 
-An Android Text-to-Speech (TTS) engine that connects to configurable OpenAI-compatible API backends (those supporting the `/v1/audio/speech` endpoint format).
+An Android Text-to-Speech (TTS) engine that connects to any OpenAI-compatible API backend (supporting the `/v1/audio/speech` endpoint).
 
-This allows you to use custom, self-hosted, or alternative cloud TTS voices (like those powered by Piper, CoquiTTS, local LLMs, or other services offering a compatible API) as a standard system-wide TTS engine on your Android device.
-
----
-
-**Note:** This README describes the `feature/settings-ui` branch.
+This allows you to use custom, self-hosted, or cloud TTS voices — powered by [AllTalk TTS](https://github.com/erew123/alltalk_tts), [Piper](https://github.com/rhasspy/piper), OpenAI, or any compatible service — as a standard system-wide TTS engine on your Android device.
 
 ---
 
 ## Features
 
-* Integrates as a standard Android TTS Engine (selectable in device Settings).
-* Connects to your specified backend URL.
-* Authenticates using your provided API Key.
-* **New in this branch:** In-app Settings screen to configure:
+* Integrates as a standard Android TTS Engine (selectable in Android Settings → Text-to-Speech).
+* Connects to any OpenAI-compatible `/v1/audio/speech` backend.
+* **API Key is optional** — works without authentication for local servers.
+* In-app Settings screen to configure:
     * Backend URL
-    * API Key (stored locally, input masked)
-    * TTS Model (e.g., `tts-1`, `tts-1-hd`)
-    * TTS Voice (e.g., `alloy`, `nova`)
+    * API Key (optional, stored locally, input masked)
+    * TTS Model
+    * TTS Voice
+    * Response Format (wav / mp3 / opus / pcm)
+* **Quick-fill presets** for AllTalk (local) and OpenAI Cloud.
+* **Direct link** to Android TTS engine selection from the main screen.
 * Settings are persisted locally using Jetpack DataStore.
-* Basic voice mapping based on requested language (can be overridden by settings).
 
-## Configuration
+---
 
-Configuration is now done through the application's user interface:
+## Setup
 
-1.  Build and install the app from this branch.
-2.  Open the app.
-3.  Navigate to the Settings screen (usually via the settings icon ⚙️ in the top app bar).
-4.  Enter your backend URL, API Key, desired TTS Model, and TTS Voice.
-5.  Click "Save".
+### 1. Install the app
 
-The TTS service will use these saved settings for subsequent synthesis requests.
+Download the latest APK from [Releases](../../releases) and install it, or build from source.
 
-**Security Note:** Your API key is stored locally on the device using standard DataStore Preferences. For enhanced security, consider using EncryptedSharedPreferences or managing keys more securely if needed.
+### 2. Select as TTS Engine
+
+Open the app and tap **"Open Android TTS Settings"**, then set *Custom TTS* as your preferred engine.
+
+### 3. Configure the backend
+
+Tap the ⚙️ icon to open Settings. Use a preset or fill in manually:
+
+| Field | AllTalk (local) | OpenAI Cloud |
+|-------|----------------|--------------|
+| Backend URL | `http://<your-pc-ip>:7851/v1/audio/speech` | `https://api.openai.com/v1/audio/speech` |
+| API Key | *(leave empty)* | Your OpenAI API Key |
+| Model | `piper` | `tts-1` or `tts-1-hd` |
+| Voice | `alloy` | `alloy`, `nova`, `echo`, … |
+| Format | `wav` | `wav` |
+
+Tap **Save**.
+
+---
+
+## Local Setup with AllTalk TTS
+
+[AllTalk TTS](https://github.com/erew123/alltalk_tts) runs on your PC/server and exposes an OpenAI-compatible API on port `7851`.
+
+1. Install and start AllTalk TTS on your machine.
+2. Make sure your Android device and the server are on the same network.
+3. Use the **"AllTalk (Local)"** preset in the app — update the IP address to match your server.
+
+> **Note for WSL users:** Set up a Windows port forward so the phone can reach WSL:
+> ```
+> netsh interface portproxy add v4tov4 listenport=7851 listenaddress=0.0.0.0 connectport=7851 connectaddress=<WSL-IP>
+> ```
+
+---
 
 ## Screenshots
 
-<img src="img/img_tts_engine_select.png" width="25%"><img src="img/img_backend_settings.png" width="25%"> 
+<img src="img/img_tts_engine_select.png" width="25%"><img src="img/img_backend_settings.png" width="25%">
+
+---
+
+## Supported Audio Formats
+
+| Format | Status |
+|--------|--------|
+| `wav` | ✅ Supported |
+| `pcm` | ✅ Supported |
+| `mp3` | ❌ Not yet implemented |
+| `opus` | ❌ Not yet implemented |
+
+---
 
 ## Future Work / TODO
 
-* Implement dropdown selection for known Models/Voices in Settings.
-* Implement `onStop()` functionality to cancel ongoing network requests.
-* More robust error handling and user feedback.
-* More sophisticated voice/language mapping.
+* MP3 / Opus decoding support.
+* Implement `onStop()` to cancel ongoing network requests.
+* More sophisticated language/voice mapping.

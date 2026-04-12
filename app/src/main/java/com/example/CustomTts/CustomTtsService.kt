@@ -281,9 +281,9 @@ class CustomTtsService : TextToSpeechService() {
 
 
                 // Prüfen, ob notwendige Einstellungen vorhanden sind
-                if (backendUrl.isBlank() || apiKey.isBlank()) {
-                    Log.e(TAG, "Backend URL or API Key is missing in settings.")
-                    safeCallback.error(TextToSpeech.ERROR_SERVICE) // Konfigurationsfehler
+                if (backendUrl.isBlank()) {
+                    Log.e(TAG, "Backend URL is missing in settings.")
+                    safeCallback.error(TextToSpeech.ERROR_SERVICE)
                     return@launch
                 }
                 Log.d(TAG, "Using Settings: URL=$backendUrl, Key=******, Model=$apiModel, Voice=$apiVoice, Format=$requestedAudioFormat, Speed=$openAiSpeed")
@@ -291,7 +291,7 @@ class CustomTtsService : TextToSpeechService() {
                 // --- Netzwerkanfrage ---
                 Log.d(TAG, "Sending request to backend...")
                 val response: HttpResponse = httpClient.post(backendUrl) {
-                    header(HttpHeaders.Authorization, "Bearer $apiKey")
+                    if (apiKey.isNotBlank()) header(HttpHeaders.Authorization, "Bearer $apiKey")
                     contentType(ContentType.Application.Json)
                     setBody(TtsRequestPayload(
                         model = apiModel,
