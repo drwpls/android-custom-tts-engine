@@ -19,12 +19,129 @@ import io.ktor.serialization.kotlinx.json.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.json.Json
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+
 
 class CustomTtsService : TextToSpeechService() {
+
+
+
 
     companion object {
         // Logging Tag
         private const val TAG = "DummyTtsService"
+    }
+
+    private data class WavHeaderInfo(
+        val sampleRate: Int,
+        val numChannels: Short,
+        val bitsPerSample: Short, // Bleibt 32
+        val audioFormatCode: Short, // Der Code aus dem Header (1 oder 3)
+        val androidEncoding: Int, // Das passende AudioFormat.ENCODING_*
+        val dataOffset: Int,
+        val dataSize: Int
+    )
+
+    private fun parseWavHeader(wavBytes: ByteArray): WavHeaderInfo? {
+        if (wavBytes.size < 44) {
+            Log.e(TAG, "WAV data too short for header: ${wavBytes.size} bytes")
+            return null // Mindestens 44 Bytes für Standard-Header benötigt
+        }
+
+        val buffer = ByteBuffer.wrap(wavBytes).order(ByteOrder.LITTLE_ENDIAN) // WAV ist Little Endian
+
+        try {
+            // Überprüfe RIFF Header
+            val riffChunkId = ByteArray(4).apply { buffer.get(this) }.toString(Charsets.US_ASCII)
+            if (riffChunkId != "RIFF") {
+                Log.e(TAG, "Invalid WAV: Missing 'RIFF' chunk ID.")
+                return null
+            }
+
+            buffer.position(8) // Gehe zum Format-Feld (nach ChunkSize)
+            val format = ByteArray(4).apply { buffer.get(this) }.toString(Charsets.US_ASCII)
+            if (format != "WAVE") {
+                Log.e(TAG, "Invalid WAV: Missing 'WAVE' format.")
+                return null
+            }
+
+            // Suche nach dem 'fmt ' Sub-Chunk
+            buffer.position(12)
+            val fmtChunkId = ByteArray(4).apply { buffer.get(this) }.toString(Charsets.US_ASCII)
+            if (fmtChunkId != "fmt ") {
+                Log.e(TAG, "Invalid WAV: Missing 'fmt ' sub-chunk ID.")
+                // Hier könnte man noch weitersuchen, aber für Standard-WAV ist es hier
+                return null
+            }
+
+            val fmtChunkSize = buffer.int // Größe des fmt Chunks (sollte 16 für PCM sein)
+            val audioFormat = buffer.short // Audioformat (1 = PCM)
+            val numChannels = buffer.short // Anzahl Kanäle
+            val sampleRate = buffer.int // Sample Rate
+            val byteRate = buffer.int // Bytes pro Sekunde (SampleRate * NumChannels * BitsPerSample/8)
+            val blockAlign = buffer.short // Bytes pro Sample Frame (NumChannels * BitsPerSample/8)
+            val bitsPerSample = buffer.short // Bits pro Sample (z.B. 16)
+
+            Log.d(TAG, "WAV Header: Format=$audioFormat, Channels=$numChannels, Rate=$sampleRate, Bits=$bitsPerSample, FmtChunkSize=$fmtChunkSize")
+
+
+            // Überprüfe auf unterstütztes Format (16-bit Int ODER 32-bit Float PCM)
+            val androidEncoding = when {
+                audioFormat == 1.toShort() && bitsPerSample == 16.toShort() -> AudioFormat.ENCODING_PCM_16BIT
+                audioFormat == 3.toShort() && bitsPerSample == 32.toShort() -> AudioFormat.ENCODING_PCM_FLOAT // Float erkennen!
+                else -> {
+                    Log.e(TAG, "Unsupported WAV format: AudioFormat=$audioFormat, BitsPerSample=$bitsPerSample. Only 16-bit Int (1) or 32-bit Float (3) PCM supported.")
+                    return null
+                }
+            }
+
+
+
+            // Suche nach dem 'data' Sub-Chunk (kann direkt nach 'fmt ' kommen oder später)
+            // Wir überspringen ggf. zusätzliche fmt-Daten oder andere Chunks
+            buffer.position(20 + fmtChunkSize) // Gehe zum Ende des fmt-Chunks (12 ID + 4 size + fmtChunkSize data)
+            var dataChunkId = ByteArray(4).apply { buffer.get(this) }.toString(Charsets.US_ASCII)
+            while(dataChunkId != "data" && buffer.remaining() >= 8) {
+                Log.d(TAG,"Skipping chunk '$dataChunkId'")
+                val chunkSize = buffer.int // Größe des unbekannten Chunks lesen
+                if (buffer.remaining() < chunkSize + 4) break // Nicht genug Daten übrig
+                buffer.position(buffer.position() + chunkSize) // Chunk überspringen
+                if (buffer.remaining() < 4) break
+                dataChunkId = ByteArray(4).apply { buffer.get(this) }.toString(Charsets.US_ASCII)
+            }
+
+
+            if (dataChunkId != "data") {
+                Log.e(TAG, "Invalid WAV: Missing 'data' sub-chunk ID.")
+                return null
+            }
+
+            val rawDataSize = buffer.int // Größe der Audiodaten
+            val dataOffset = buffer.position() // Aktuelle Position ist der Start der Daten
+            // OpenAI WAV uses 0xFFFFFFFF (reads as -1) for unknown/streaming size — fall back to actual bytes
+            val dataSize = if (rawDataSize <= 0) wavBytes.size - dataOffset else rawDataSize
+
+            if (wavBytes.size < dataOffset + dataSize) {
+                Log.e(TAG, "WAV data shorter than expected by header. Expected >= ${dataOffset + dataSize}, got ${wavBytes.size}")
+                return null
+            }
+
+
+            return WavHeaderInfo(
+                sampleRate = sampleRate,
+                numChannels = numChannels,
+                bitsPerSample = bitsPerSample,
+                audioFormatCode = audioFormat, // Code speichern
+                androidEncoding = androidEncoding, // Passendes Android Encoding speichern
+                dataOffset = dataOffset,
+                dataSize = dataSize
+            )
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing WAV header", e)
+            return null
+        }
     }
 
     // Ktor HTTP Client
@@ -160,7 +277,8 @@ class CustomTtsService : TextToSpeechService() {
                 val apiKey = currentSettings[PrefKeys.API_KEY] ?: ""
                 val apiModel = currentSettings[PrefKeys.TTS_MODEL] ?: "tts-1" // Standardmodell
                 val apiVoice = currentSettings[PrefKeys.TTS_VOICE] ?: "alloy" // Standardstimme
-                val requestedAudioFormat = "pcm" // Fordere PCM an!
+                val requestedAudioFormat = currentSettings[PrefKeys.RESPONSE_FORMAT] ?: "wav"
+
 
                 // Prüfen, ob notwendige Einstellungen vorhanden sind
                 if (backendUrl.isBlank() || apiKey.isBlank()) {
@@ -169,7 +287,7 @@ class CustomTtsService : TextToSpeechService() {
                     return@launch
                 }
                 Log.d(TAG, "Using Settings: URL=$backendUrl, Key=******, Model=$apiModel, Voice=$apiVoice, Format=$requestedAudioFormat, Speed=$openAiSpeed")
-
+                Log.d(TAG, "Using Settings: ..., Format=$requestedAudioFormat, ...")
                 // --- Netzwerkanfrage ---
                 Log.d(TAG, "Sending request to backend...")
                 val response: HttpResponse = httpClient.post(backendUrl) {
@@ -188,53 +306,96 @@ class CustomTtsService : TextToSpeechService() {
                 // --- Antwortverarbeitung ---
                 if (response.status.isSuccess()) {
                     val audioBytes = response.readBytes()
-                    Log.d(TAG, "Received ${audioBytes.size} audio bytes.")
+                    Log.d(TAG, "Received ${audioBytes.size} bytes for format '$requestedAudioFormat'.")
 
-                    if (audioBytes.isEmpty()) {
-                        Log.w(TAG, "Received empty audio data from backend.")
-                        safeCallback.error(TextToSpeech.ERROR_SYNTHESIS)
-                        return@launch
-                    }
+                    if (audioBytes.isEmpty()) { /* Fehler: Leere Daten */ return@launch }
 
-                    // --- Callback starten & Audio streamen (Annahme: PCM wurde empfangen!) ---
-                    // TODO: Anpassen, falls Backend anderes PCM-Format liefert oder Dekodierung nötig ist!
-                    val sampleRateInHz = 24000 // Annahme für OpenAI PCM
-                    val encoding = AudioFormat.ENCODING_PCM_16BIT
-                    val channelCount = 1 // Mono
+                    // --- Callback starten & Audio streamen ---
+                    if (requestedAudioFormat == "pcm") {
+                        // PCM direkt verarbeiten (Annahme: Format bekannt)
+                        Log.d(TAG, "Processing as raw PCM...")
+                        val sampleRateInHz = 24000 // Annahme! Muss zum Backend passen!
+                        val encoding = AudioFormat.ENCODING_PCM_16BIT
+                        val channelCount = 1 // Annahme!
+                        val startResult = safeCallback.start(sampleRateInHz, encoding, channelCount)
+                        if (startResult == TextToSpeech.ERROR) { Log.e(TAG,"PCM start failed"); safeCallback.error(TextToSpeech.ERROR_OUTPUT); return@launch }
 
-                    Log.d(TAG, "Calling callback.start() with Rate=$sampleRateInHz, Encoding=$encoding, Channels=$channelCount")
-                    val startResult = safeCallback.start(sampleRateInHz, encoding, channelCount)
-                    if (startResult == TextToSpeech.ERROR) {
-                        Log.e(TAG, "Callback.start() failed!")
-                        safeCallback.error(TextToSpeech.ERROR_OUTPUT)
-                        return@launch
-                    }
+                        // PCM Bytes streamen (gesamtes Array, da keine Header)
+                        val audioChunkSize = 8192
+                        var offset = 0
+                        while (offset < audioBytes.size) {
+                            val chunkSize = Math.min(audioBytes.size - offset, audioChunkSize)
+                            val audioAvailableResult = safeCallback.audioAvailable(audioBytes, offset, chunkSize)
+                            if (audioAvailableResult == TextToSpeech.ERROR) { Log.e(TAG,"PCM audioAvailable failed"); safeCallback.error(TextToSpeech.ERROR_OUTPUT); return@launch }
+                            offset += chunkSize
+                        }
+                        safeCallback.done()
+                        Log.i(TAG, "PCM processing completed.")
 
-                    // Streaming
-                    Log.d(TAG, "Starting to stream ${audioBytes.size} bytes to callback...")
-                    val audioChunkSize = 8192 // Feste Chunk-Größe
-                    var offset = 0
-                    while (offset < audioBytes.size) {
-                        val chunkSize = Math.min(audioBytes.size - offset, audioChunkSize)
-                        val audioAvailableResult = safeCallback.audioAvailable(audioBytes, offset, chunkSize)
-                        if (audioAvailableResult == TextToSpeech.ERROR) {
-                            Log.e(TAG, "Callback.audioAvailable() failed!")
+                    } else if (requestedAudioFormat == "wav") {
+                        // WAV verarbeiten
+                        Log.d(TAG, "Processing as WAV...")
+                        val wavInfo = parseWavHeader(audioBytes) // Header parsen
+
+                        if (wavInfo == null) {
+                            // Ungültiger oder nicht unterstützter WAV-Header
+                            Log.e(TAG, "Failed to parse or unsupported WAV header.")
+                            safeCallback.error(TextToSpeech.ERROR_INVALID_REQUEST) // Fehler im empfangenen Format
+                            return@launch
+                        }
+
+                        Log.d(TAG, "Calling callback.start() with WAV params: Rate=${wavInfo.sampleRate}, Encoding=${wavInfo.androidEncoding}, Channels=${wavInfo.numChannels}")
+                        val startResult = safeCallback.start(wavInfo.sampleRate, wavInfo.androidEncoding, wavInfo.numChannels.toInt())
+                        if (startResult == TextToSpeech.ERROR) {
+                            Log.e(TAG, "WAV start failed!")
                             safeCallback.error(TextToSpeech.ERROR_OUTPUT)
                             return@launch
                         }
-                        offset += chunkSize
-                    }
-                    Log.d(TAG, "Finished streaming audio data.")
 
-                    // --- Synthese abschließen ---
-                    Log.d(TAG, "Calling callback.done()")
-                    val doneResult = safeCallback.done()
-                    if (doneResult == TextToSpeech.ERROR) {
-                        Log.e(TAG, "Callback.done() failed!")
+                        // Bytes NACH dem Header streamen (Die Bytes sind bereits Float oder Int, je nach Header)
+                        val dataOffset = wavInfo.dataOffset
+                        val dataSize = wavInfo.dataSize
+                        Log.d(TAG, "Streaming ${dataSize} WAV data bytes (Format: ${wavInfo.audioFormatCode}, Encoding: ${wavInfo.androidEncoding}) starting from offset ${dataOffset}...")
+
+                        val audioChunkSize = 8192
+                        var bytesStreamed = 0
+                        while (bytesStreamed < dataSize) {
+                            val readOffset = dataOffset + bytesStreamed
+                            // Sicherheitscheck: Stelle sicher, dass wir nicht über das Ende des Arrays lesen
+                            if (readOffset >= audioBytes.size) {
+                                Log.w(TAG, "WAV data ended prematurely based on header size.")
+                                break // Schleife beenden
+                            }
+                            // Berechne Chunk-Größe sicher
+                            val chunkSize = Math.min(dataSize - bytesStreamed, audioChunkSize).toInt()
+                            val availableBytesInArray = audioBytes.size - readOffset
+                            val actualChunkSize = Math.min(chunkSize, availableBytesInArray)
+
+                            if (actualChunkSize <= 0) break // Nichts mehr zu lesen
+
+                            val audioAvailableResult = safeCallback.audioAvailable(audioBytes, readOffset, actualChunkSize)
+                            if (audioAvailableResult == TextToSpeech.ERROR) {
+                                Log.e(TAG, "WAV audioAvailable failed!")
+                                safeCallback.error(TextToSpeech.ERROR_OUTPUT)
+                                return@launch
+                            }
+                            bytesStreamed += actualChunkSize
+                        } // Ende while
+
+                        safeCallback.done()
+                        Log.i(TAG, "WAV processing completed. Streamed $bytesStreamed bytes.")
+
+                    } else if (requestedAudioFormat == "mp3" || requestedAudioFormat == "opus") {
+                        // Komprimierte Formate -> Dekodierung NÖTIG!
+                        Log.e(TAG,"Decoding for format '$requestedAudioFormat' not implemented yet!")
+                        safeCallback.error(TextToSpeech.ERROR_SERVICE) // Fehler: Noch nicht implementiert
+                        return@launch
                     } else {
-                        Log.i(TAG, "Synthesis completed successfully for the request.")
+                        // Nicht unterstütztes Format angefordert/empfangen
+                        Log.e(TAG, "Unsupported audio format requested/received: $requestedAudioFormat")
+                        safeCallback.error(TextToSpeech.ERROR_INVALID_REQUEST)
+                        return@launch
                     }
-
                 } else {
                     // Fehler bei der Backend-Antwort
                     val errorBody = try { response.bodyAsText() } catch (e: Exception) { "Could not read error body: ${e.message}" }

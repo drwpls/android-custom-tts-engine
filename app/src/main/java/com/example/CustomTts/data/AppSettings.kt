@@ -23,5 +23,8 @@ object PrefKeys {
     // Ein Schlüssel für die Stimme (Typ: String)
     val TTS_VOICE = stringPreferencesKey("tts_voice")
 
+    // A key for the response format
+    val RESPONSE_FORMAT = stringPreferencesKey("response_format")
+
     // Hier könntest du bei Bedarf weitere Schlüssel für andere Einstellungen hinzufügen
 }

@@ -22,6 +22,10 @@ import com.example.CustomTts.data.settingsDataStore // Passe diesen Import an!
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import androidx.datastore.preferences.core.edit
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -34,6 +38,7 @@ fun SettingsScreen(
     var modelState by remember { mutableStateOf("") }
     var voiceState by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
+    var formatState by remember { mutableStateOf("") }
 
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -43,7 +48,8 @@ fun SettingsScreen(
     // val defaultUrl = "https://api.openai.com/v1/audio/speech"
     val defaultModel = stringResource(id = R.string.settings_placeholder_model).substringAfter("e.g., ") // Hole default aus string
     val defaultVoice = stringResource(id = R.string.settings_placeholder_voice).substringAfter("e.g., ") // Hole default aus string
-
+    val defaultFormat = "wav"
+    val supportedFormats = listOf("wav", "mp3", "opus", "pcm")
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -52,11 +58,13 @@ fun SettingsScreen(
             apiKeyState = prefs[PrefKeys.API_KEY] ?: ""
             modelState = prefs[PrefKeys.TTS_MODEL] ?: defaultModel
             voiceState = prefs[PrefKeys.TTS_VOICE] ?: defaultVoice
+            formatState = prefs[PrefKeys.RESPONSE_FORMAT] ?: defaultFormat
             Log.d("SettingsScreen", "Initial values loaded from DataStore.")
         } ?: run {
             urlState = defaultUrl
             modelState = defaultModel
             voiceState = defaultVoice
+            formatState = defaultFormat
             Log.d("SettingsScreen", "Using default values (DataStore might be empty).")
         }
         isLoading = false
@@ -137,42 +145,89 @@ fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+                // --- Dropdown für Response Format ---
+                Spacer(modifier = Modifier.height(16.dp))
+                var formatExpanded by remember { mutableStateOf(false) }
+
+                ExposedDropdownMenuBox(
+                    expanded = formatExpanded,
+                    onExpandedChange = { formatExpanded = !formatExpanded },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    OutlinedTextField(
+                        value = formatState, // Zeigt das aktuell ausgewählte Format
+                        onValueChange = {}, // Nicht direkt änderbar
+                        readOnly = true,
+                        label = { Text(stringResource(id = R.string.settings_label_response_format)) }, // String hinzufügen!
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = formatExpanded) },
+                        modifier = Modifier
+                            .menuAnchor() // Wichtig für Dropdown Positionierung
+                            .fillMaxWidth()
+                    )
+                    // Das eigentliche Dropdown-Menü
+                    ExposedDropdownMenu(
+                        expanded = formatExpanded,
+                        onDismissRequest = { formatExpanded = false }
+                    ) {
+                        supportedFormats.forEach { selectionOption ->
+                            DropdownMenuItem(
+                                text = { Text(selectionOption) },
+                                onClick = {
+                                    formatState = selectionOption // Zustand aktualisieren
+                                    formatExpanded = false // Menü schließen
+                                }
+                            )
+                        }
+                    }
+                } // Ende ExposedDropdownMenuBox
+
+
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
                     onClick = {
                         scope.launch {
+                            // Hole String-Ressourcen für Snackbar-Nachrichten
                             val validationErrorMsg = context.getString(R.string.settings_snackbar_validation_error)
                             val savedMsg = context.getString(R.string.settings_snackbar_saved)
                             val errorMsg = context.getString(R.string.settings_snackbar_save_error)
 
                             try {
+                                // Hole Werte aus dem State und trimme sie ggf.
                                 val urlToSave = urlState.trim()
                                 val modelToSave = modelState.trim()
                                 val voiceToSave = voiceState.trim()
+                                // Beachte: formatState wird direkt verwendet, kein trim nötig/sinnvoll
 
-                                if (urlToSave.isBlank() || modelToSave.isBlank() || voiceToSave.isBlank()) {
-                                    snackbarHostState.showSnackbar(validationErrorMsg) // Geändert
-                                    return@launch
+                                // Überprüfe, ob alle *notwendigen* Felder ausgefüllt sind
+                                // formatState sollte auch geprüft werden!
+                                if (urlToSave.isBlank() || modelToSave.isBlank() || voiceToSave.isBlank() || formatState.isBlank()) {
+                                    snackbarHostState.showSnackbar(validationErrorMsg)
+                                    return@launch // Beende Coroutine hier
                                 }
 
+                                // Speichere die Werte im DataStore
                                 context.settingsDataStore.edit { settings ->
                                     settings[PrefKeys.BACKEND_URL] = urlToSave
-                                    settings[PrefKeys.API_KEY] = apiKeyState
+                                    settings[PrefKeys.API_KEY] = apiKeyState // Key nicht trimmen!
                                     settings[PrefKeys.TTS_MODEL] = modelToSave
                                     settings[PrefKeys.TTS_VOICE] = voiceToSave
+                                    // Verwende direkt formatState zum Speichern
+                                    settings[PrefKeys.RESPONSE_FORMAT] = formatState
                                 }
+
                                 Log.i("SettingsScreen", "Settings saved!")
-                                snackbarHostState.showSnackbar(savedMsg) // Geändert
+                                snackbarHostState.showSnackbar(savedMsg) // Erfolgsmeldung
+
                             } catch (e: Exception) {
                                 Log.e("SettingsScreen", "Failed to save settings", e)
-                                snackbarHostState.showSnackbar(errorMsg) // Geändert
+                                snackbarHostState.showSnackbar(errorMsg) // Fehlermeldung
                             }
                         }
                     },
                     modifier = Modifier.align(Alignment.End)
                 ) {
-                    Text(stringResource(id = R.string.settings_button_save)) // Geändert
+                    Text(stringResource(id = R.string.settings_button_save))
                 }
             } // Ende Column
         } // Ende else (isLoading)

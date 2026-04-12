@@ -21,5 +21,6 @@
     <string name="main_screen_text_3">Click the gear icon in the top right for settings.</string>
     <string name="app_name">CustomTTS</string>
     <string name="tts_engine_label">CustomTTS Engine</string>
+    <string name="settings_label_response_format">Response Format</string>
 
 </resources>
