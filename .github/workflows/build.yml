@@ -26,12 +26,12 @@ jobs:
 
       - name: Build signed release APK
         run: |
-          export KEYSTORE_PATH=${{ github.workspace }}/keystore.jks
-          export KEYSTORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }}
-          export KEY_ALIAS=${{ secrets.KEY_ALIAS }}
-          export KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease \
+            -Psigning.keyPath=${{ github.workspace }}/keystore.jks \
+            -Psigning.storePassword=${{ secrets.KEYSTORE_PASSWORD }} \
+            -Psigning.keyAlias=${{ secrets.KEY_ALIAS }} \
+            -Psigning.keyPassword=${{ secrets.KEY_PASSWORD }}
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
