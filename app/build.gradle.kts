@@ -32,13 +32,13 @@ android {
 
     buildTypes {
         release {
-            val keyPath = project.findProperty("signing.keyPath")?.toString()
+            val keyPath = System.getenv("KEYSTORE_PATH")
             if (keyPath != null) {
                 signingConfig = signingConfigs.create("release") {
                     storeFile = file(keyPath)
-                    storePassword = project.findProperty("signing.storePassword")?.toString()
-                    keyAlias = project.findProperty("signing.keyAlias")?.toString()
-                    keyPassword = project.findProperty("signing.keyPassword")?.toString()
+                    storePassword = System.getenv("KEYSTORE_PASSWORD")
+                    keyAlias = System.getenv("KEY_ALIAS")
+                    keyPassword = System.getenv("KEY_PASSWORD")
                 }
             }
             isMinifyEnabled = false
