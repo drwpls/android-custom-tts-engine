@@ -30,21 +30,17 @@ android {
         }
     }
 
-    signingConfigs {
-        create("release") {
-            val keyPath = project.findProperty("signing.keyPath")?.toString()
-            if (keyPath != null) {
-                storeFile = file(keyPath)
-                storePassword = project.findProperty("signing.storePassword")?.toString()
-                keyAlias = project.findProperty("signing.keyAlias")?.toString()
-                keyPassword = project.findProperty("signing.keyPassword")?.toString()
-            }
-        }
-    }
-
     buildTypes {
         release {
-            signingConfig = signingConfigs.findByName("release")
+            val keyPath = project.findProperty("signing.keyPath")?.toString()
+            if (keyPath != null) {
+                signingConfig = signingConfigs.create("release") {
+                    storeFile = file(keyPath)
+                    storePassword = project.findProperty("signing.storePassword")?.toString()
+                    keyAlias = project.findProperty("signing.keyAlias")?.toString()
+                    keyPassword = project.findProperty("signing.keyPassword")?.toString()
+                }
+            }
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
